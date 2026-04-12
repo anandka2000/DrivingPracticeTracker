@@ -55,18 +55,21 @@ class VoiceLogManager: NSObject, ObservableObject {
             try beginAudioSession()
             isRecording = true
         } catch {
+            isRecording = false
             errorMessage = "Could not start recording: \(error.localizedDescription)"
         }
     }
 
     func stopRecording() {
+        guard isRecording else { return }
+        isRecording = false
+
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
         recognitionRequest?.endAudio()
         recognitionTask?.cancel()
         recognitionTask = nil
         recognitionRequest = nil
-        isRecording = false
 
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
 
