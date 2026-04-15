@@ -15,6 +15,12 @@ class VoiceLogManager: NSObject, ObservableObject {
     @Published var errorMessage: String?
     @Published var parsedSession: ParsedSession?
 
+    // Timer mode
+    @Published var timerMode: Bool = false
+    @Published var sessionInProgress: Bool = false
+    @Published var sessionStartTime: Date?
+    @Published var sessionElapsedText: String = "00:00"
+
     // MARK: - Parsed output
 
     struct ParsedSession {
@@ -34,6 +40,7 @@ class VoiceLogManager: NSObject, ObservableObject {
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
+    private var elapsedTimer: Timer?
 
     // MARK: - Start / Stop
 
@@ -73,7 +80,8 @@ class VoiceLogManager: NSObject, ObservableObject {
 
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
 
-        if !transcript.isEmpty {
+        // Only auto-parse in describe mode (not timer mode, which handles its own end)
+        if !timerMode && !transcript.isEmpty {
             parsedSession = parseTranscript(transcript)
         }
     }
@@ -119,9 +127,14 @@ class VoiceLogManager: NSObject, ObservableObject {
                 guard let self else { return }
                 if let result {
                     self.transcript = result.bestTranscription.formattedString
+                    if self.timerMode {
+                        self.checkForStartStopCommands(in: result.bestTranscription.formattedString)
+                    }
                 }
                 if error != nil || result?.isFinal == true {
-                    self.stopRecording()
+                    if !self.timerMode {
+                        self.stopRecording()
+                    }
                 }
             }
         }
@@ -134,6 +147,49 @@ class VoiceLogManager: NSObject, ObservableObject {
 
         audioEngine.prepare()
         try audioEngine.start()
+    }
+
+    // MARK: - Timer Mode Commands
+
+    private func checkForStartStopCommands(in text: String) {
+        let lower = text.lowercased()
+        let startPhrases = ["start driving", "start log", "begin drive", "begin driving", "log started"]
+        let stopPhrases = ["stop driving", "stop log", "end drive", "end driving", "log stopped", "finish driving"]
+
+        if !sessionInProgress && startPhrases.contains(where: { lower.contains($0) }) {
+            sessionStartTime = Date()
+            sessionInProgress = true
+            transcript = "Session started — say \"stop driving\" when done."
+            startElapsedTimer()
+        } else if sessionInProgress && stopPhrases.contains(where: { lower.contains($0) }) {
+            endTimedSession()
+        }
+    }
+
+    private func startElapsedTimer() {
+        elapsedTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.updateElapsed() }
+        }
+    }
+
+    private func updateElapsed() {
+        guard let start = sessionStartTime else { return }
+        let elapsed = Int(Date().timeIntervalSince(start))
+        let m = elapsed / 60
+        let s = elapsed % 60
+        sessionElapsedText = String(format: "%02d:%02d", m, s)
+    }
+
+    private func endTimedSession() {
+        guard let start = sessionStartTime else { return }
+        elapsedTimer?.invalidate()
+        elapsedTimer = nil
+        let durationMinutes = max(Int(Date().timeIntervalSince(start) / 60), 1)
+        let hour = Calendar.current.component(.hour, from: start)
+        let conditions: [DrivingCondition] = [hour >= 18 || hour < 6 ? .night : .day]
+        parsedSession = ParsedSession(durationMinutes: durationMinutes, conditions: conditions, supervisor: "")
+        sessionInProgress = false
+        stopRecording()
     }
 
     // MARK: - Natural Language Parsing

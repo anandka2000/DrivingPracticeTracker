@@ -8,40 +8,70 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                // Jurisdiction presets
+                // Auto Logging
+                Section("Auto Logging") {
+                    Toggle("Detect & auto-log drives", isOn: $store.autoLoggingEnabled)
+                }
+
+                // Jurisdiction — grouped by country
                 Section("Jurisdiction") {
-                    ForEach(RequirementsProfile.presets) { preset in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(preset.name)
-                                    .font(.body)
-                                Text(requirementsSummary(preset))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if store.profile.id == preset.id {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.blue)
-                                    .fontWeight(.semibold)
-                            }
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if preset.name == "Custom" {
-                                customProfile = store.profile.name == "Custom"
-                                    ? store.profile
-                                    : preset
-                                showingCustomEditor = true
-                            } else {
-                                store.updateProfile(preset)
+                    ForEach(RequirementsProfile.presetGroups, id: \.country) { group in
+                        NavigationLink {
+                            jurisdictionGroupList(country: group.country, profiles: group.profiles)
+                        } label: {
+                            HStack {
+                                Text(group.country)
+                                Spacer()
+                                let activeInGroup = group.profiles.first(where: { $0.id == store.profile.id })
+                                if let active = activeInGroup {
+                                    Text(active.name)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }
                 }
 
+                // Custom profile row
+                Section("Custom Profile") {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Custom")
+                                .font(.body)
+                            if store.profile.name == "Custom" {
+                                Text(requirementsSummary(store.profile))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                if !store.profile.region.isEmpty {
+                                    Text(store.profile.region)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        Spacer()
+                        if store.profile.name == "Custom" {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(.blue)
+                                .fontWeight(.semibold)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        customProfile = store.profile.name == "Custom"
+                            ? store.profile
+                            : RequirementsProfile(name: "Custom", totalRequiredHours: 50, nightRequiredHours: 10)
+                        showingCustomEditor = true
+                    }
+                }
+
                 // Current requirements summary
                 Section("Active Requirements") {
+                    LabeledContent("Jurisdiction", value: store.profile.name)
+                    if !store.profile.region.isEmpty {
+                        LabeledContent("Region", value: store.profile.region)
+                    }
                     LabeledContent("Total Hours", value: String(format: "%.0f h", store.profile.totalRequiredHours))
                     if store.profile.nightRequiredHours > 0 {
                         LabeledContent("Night Hours", value: String(format: "%.0f h", store.profile.nightRequiredHours))
@@ -88,6 +118,40 @@ struct SettingsView: View {
         }
     }
 
+    @ViewBuilder
+    private func jurisdictionGroupList(country: String, profiles: [RequirementsProfile]) -> some View {
+        List {
+            ForEach(profiles) { preset in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(preset.name)
+                            .font(.body)
+                        if !preset.region.isEmpty {
+                            Text(preset.region)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Text(requirementsSummary(preset))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if store.profile.id == preset.id {
+                        Image(systemName: "checkmark")
+                            .foregroundStyle(.blue)
+                            .fontWeight(.semibold)
+                    }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    store.updateProfile(preset)
+                }
+            }
+        }
+        .navigationTitle(country)
+        .navigationBarTitleDisplayMode(.large)
+    }
+
     private func requirementsSummary(_ profile: RequirementsProfile) -> String {
         var parts = [String(format: "%.0f hrs total", profile.totalRequiredHours)]
         if profile.nightRequiredHours > 0 {
@@ -107,6 +171,9 @@ struct CustomProfileEditor: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Profile Details") {
+                    TextField("City / Region (optional)", text: $profile.region)
+                }
                 Section("Total Hours Required") {
                     Stepper(
                         String(format: "%.0f hours", profile.totalRequiredHours),

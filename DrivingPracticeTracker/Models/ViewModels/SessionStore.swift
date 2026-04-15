@@ -10,6 +10,14 @@ class SessionStore: ObservableObject {
     @Published var sessions: [DrivingSession] = []
     @Published var profile: RequirementsProfile = RequirementsProfile.defaultProfile
 
+    @Published var driverName: String {
+        didSet { UserDefaults.standard.set(driverName, forKey: "driverName") }
+    }
+
+    @Published var autoLoggingEnabled: Bool {
+        didSet { UserDefaults.standard.set(autoLoggingEnabled, forKey: "autoLoggingEnabled") }
+    }
+
     private let fileManager = FileManager.default
 
     private var sessionsURL: URL {
@@ -23,6 +31,8 @@ class SessionStore: ObservableObject {
     }
 
     private init() {
+        driverName = UserDefaults.standard.string(forKey: "driverName") ?? ""
+        autoLoggingEnabled = UserDefaults.standard.bool(forKey: "autoLoggingEnabled")
         loadSessions()
         loadProfile()
     }

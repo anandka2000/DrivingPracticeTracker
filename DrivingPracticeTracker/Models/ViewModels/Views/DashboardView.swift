@@ -2,11 +2,34 @@ import SwiftUI
 
 struct DashboardView: View {
     @EnvironmentObject var store: SessionStore
+    @State private var showNameEditor = false
+    @State private var pendingName = ""
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
+                    // Driver greeting
+                    HStack {
+                        if store.driverName.isEmpty {
+                            Button("Set your name") { showNameEditor = true }
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Hi, \(store.driverName)! 👋")
+                                .font(.title3.bold())
+                            Spacer()
+                            Button {
+                                pendingName = store.driverName
+                                showNameEditor = true
+                            } label: {
+                                Image(systemName: "pencil.circle")
+                                    .font(.title3)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+
                     // Completion banner
                     if store.isComplete {
                         HStack {
@@ -124,6 +147,18 @@ struct DashboardView: View {
             }
             .navigationTitle(store.profile.name)
             .navigationBarTitleDisplayMode(.large)
+            .alert("Your Name", isPresented: $showNameEditor) {
+                TextField("Enter your name", text: $pendingName)
+                Button("Save") {
+                    store.driverName = pendingName.trimmingCharacters(in: .whitespaces)
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This appears as a greeting on the dashboard.")
+            }
+            .onAppear {
+                pendingName = store.driverName
+            }
         }
     }
 }
