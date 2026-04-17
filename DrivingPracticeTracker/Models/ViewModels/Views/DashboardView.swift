@@ -145,7 +145,7 @@ struct DashboardView: View {
                 }
                 .padding(.vertical)
             }
-            .navigationTitle(store.profile.name)
+            .navigationTitle(store.profile.displayTitle)
             .navigationBarTitleDisplayMode(.large)
             .alert("Your Name", isPresented: $showNameEditor) {
                 TextField("Enter your name", text: $pendingName)

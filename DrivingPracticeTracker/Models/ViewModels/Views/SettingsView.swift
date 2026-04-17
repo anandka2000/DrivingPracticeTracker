@@ -102,8 +102,10 @@ struct SettingsView: View {
 
                 // Data management
                 Section("Data") {
-                    NavigationLink("Export Sessions (CSV)") {
-                        ExportView()
+                    NavigationLink {
+                        ReportView()
+                    } label: {
+                        Label("Report & Export (PDF / CSV)", systemImage: "doc.richtext")
                     }
                 }
             }

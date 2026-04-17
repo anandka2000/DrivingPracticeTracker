@@ -160,4 +160,13 @@ struct RequirementsProfile: Identifiable, Codable, Equatable {
     }
 
     static var defaultProfile: RequirementsProfile { australiaProfiles[0] }
+
+    /// The title to display on the Dashboard.
+    /// Custom profiles show the user's region name; presets show the state abbreviation.
+    var displayTitle: String {
+        if name == "Custom" {
+            return region.isEmpty ? "Custom Profile" : region
+        }
+        return name
+    }
 }
