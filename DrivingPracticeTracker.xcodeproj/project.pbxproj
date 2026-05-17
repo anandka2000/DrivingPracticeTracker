@@ -254,6 +254,7 @@
 				DEVELOPMENT_TEAM = 4FBNN327UJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Driving Tracker";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "This app uses your location to detect driving speed for highway classification.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app uses the microphone to let you log driving sessions by voice.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "This app uses motion data to automatically detect when you are driving.";
@@ -291,6 +292,7 @@
 				DEVELOPMENT_TEAM = 4FBNN327UJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Driving Tracker";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "This app uses your location to detect driving speed for highway classification.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app uses the microphone to let you log driving sessions by voice.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "This app uses motion data to automatically detect when you are driving.";
