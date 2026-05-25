@@ -65,7 +65,7 @@ struct ReportGenerator {
                     .font: UIFont.systemFont(ofSize: 8),
                     .foregroundColor: UIColor.secondaryLabel
                 ]
-                "DrivingPracticeTracker  ·  Page \(pageNum)".draw(
+                "SteerStart  ·  Page \(pageNum)".draw(
                     at: CGPoint(x: margin, y: footerY + 9), withAttributes: footAttr
                 )
                 Date().formatted(date: .abbreviated, time: .omitted).draw(
