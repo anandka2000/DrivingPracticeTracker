@@ -37,6 +37,8 @@ struct ContentView: View {
             }
         }
         .onAppear {
+            // Safety net: also start here in case the App init missed it
+            // (e.g. autoLoggingEnabled was toggled while app was closed)
             if store.autoLoggingEnabled { autoDrive.startMonitoring() }
         }
         .onChange(of: store.autoLoggingEnabled) { _, enabled in
@@ -139,9 +141,21 @@ struct DetectedSessionSheet: View {
         NavigationStack {
             if let session = autoDrive.pendingSession {
                 Form {
+                    // Info banner for auto-detected drives the user never confirmed
+                    if !session.wasUserConfirmed {
+                        Section {
+                            Label(
+                                "This drive was auto-detected when you stopped moving. Review the details and save or discard.",
+                                systemImage: "info.circle"
+                            )
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+
                     Section("Detected Drive") {
-                        LabeledContent("Date",      value: session.date.formatted(date: .abbreviated, time: .shortened))
-                        LabeledContent("Duration",  value: formatDuration(session.durationMinutes))
+                        LabeledContent("Date",       value: session.date.formatted(date: .abbreviated, time: .shortened))
+                        LabeledContent("Duration",   value: formatDuration(session.durationMinutes))
                         LabeledContent("Conditions", value: session.conditions.map(\.rawValue).joined(separator: ", "))
                     }
                     Section("Supervisor (optional)") {
@@ -152,7 +166,7 @@ struct DetectedSessionSheet: View {
                         TextEditor(text: $notes).frame(minHeight: 60)
                     }
                 }
-                .navigationTitle("Auto-Detected Drive")
+                .navigationTitle(session.wasUserConfirmed ? "Auto-Detected Drive" : "Drive Detected")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {

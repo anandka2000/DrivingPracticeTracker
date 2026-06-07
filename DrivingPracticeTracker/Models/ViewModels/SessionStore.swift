@@ -18,6 +18,10 @@ class SessionStore: ObservableObject {
         didSet { UserDefaults.standard.set(autoLoggingEnabled, forKey: "autoLoggingEnabled") }
     }
 
+    /// The last-saved custom profile — persisted so it survives switching to a preset and back.
+    @Published var savedCustomProfile: RequirementsProfile =
+        RequirementsProfile(name: "Custom", totalRequiredHours: 50, nightRequiredHours: 10)
+
     private let fileManager = FileManager.default
 
     private var sessionsURL: URL {
@@ -35,6 +39,7 @@ class SessionStore: ObservableObject {
         autoLoggingEnabled = UserDefaults.standard.bool(forKey: "autoLoggingEnabled")
         loadSessions()
         loadProfile()
+        loadCustomProfile()
     }
 
     // MARK: - Computed statistics
@@ -99,6 +104,14 @@ class SessionStore: ObservableObject {
         saveProfile()
     }
 
+    /// Persist the custom profile so it survives switching to a preset and back.
+    func saveCustomProfile(_ profile: RequirementsProfile) {
+        savedCustomProfile = profile
+        if let data = try? JSONEncoder().encode(profile) {
+            UserDefaults.standard.set(data, forKey: "savedCustomProfile")
+        }
+    }
+
     // MARK: - Persistence
 
     private func saveSessions() {
@@ -121,5 +134,11 @@ class SessionStore: ObservableObject {
         guard let data = try? Data(contentsOf: profileURL),
               let decoded = try? JSONDecoder().decode(RequirementsProfile.self, from: data) else { return }
         profile = decoded
+    }
+
+    private func loadCustomProfile() {
+        guard let data = UserDefaults.standard.data(forKey: "savedCustomProfile"),
+              let decoded = try? JSONDecoder().decode(RequirementsProfile.self, from: data) else { return }
+        savedCustomProfile = decoded
     }
 }

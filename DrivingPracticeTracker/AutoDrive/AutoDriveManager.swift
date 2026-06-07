@@ -13,7 +13,7 @@ class AutoDriveManager: NSObject, ObservableObject {
 
     // MARK: - Published state
     @Published var isDriving = false
-    @Published var isDrivingConfirmed = false   // user said yes → persistent indicator
+    @Published var isDrivingConfirmed = false   // user said yes → persistent green pill
     @Published var showStartBanner = false
     @Published var showEndPrompt = false
     @Published var pendingSession: DetectedSession?
@@ -23,6 +23,8 @@ class AutoDriveManager: NSObject, ObservableObject {
         var date: Date
         var durationMinutes: Int
         var conditions: [DrivingCondition]
+        /// true = user explicitly said yes; false = auto-detected end without prior confirmation
+        var wasUserConfirmed: Bool
     }
 
     // MARK: - Private — motion & location
@@ -51,6 +53,9 @@ class AutoDriveManager: NSObject, ObservableObject {
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         locationManager.distanceFilter = 20
+        // Bug 1 fix: allow location (and thus CMMotion piggyback) to run in background
+        locationManager.allowsBackgroundLocationUpdates = true
+        locationManager.pausesLocationUpdatesAutomatically = false
         synthesizer.delegate = self
         voiceRecognizer = SFSpeechRecognizer(locale: Locale.current)
             ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
@@ -64,11 +69,14 @@ class AutoDriveManager: NSObject, ObservableObject {
             guard let self, let activity else { return }
             Task { @MainActor in self.process(activity: activity) }
         }
+        // Bug 1 fix: significant location changes relaunch the app from terminated state
+        locationManager.startMonitoringSignificantLocationChanges()
     }
 
     func stopMonitoring() {
         activityManager.stopActivityUpdates()
         locationManager.stopUpdatingLocation()
+        locationManager.stopMonitoringSignificantLocationChanges()
         stopDebounceTask?.cancel()
         stopVoiceListening()
     }
@@ -93,7 +101,7 @@ class AutoDriveManager: NSObject, ObservableObject {
         locationManager.stopUpdatingLocation()
     }
 
-    /// Called when user taps "End Drive" manually from the persistent banner.
+    /// Called when user taps "End Drive" manually from the persistent pill.
     func endDriveNow() {
         stopDebounceTask?.cancel()
         driveEnded()
@@ -123,7 +131,7 @@ class AutoDriveManager: NSObject, ObservableObject {
         } else if isDriving && !activity.automotive {
             stopDebounceTask?.cancel()
             stopDebounceTask = Task {
-                // 60-second debounce — short enough to be responsive, long enough for traffic lights
+                // 60-second debounce — handles traffic lights without ending the session
                 try? await Task.sleep(for: .seconds(60))
                 if !Task.isCancelled { await MainActor.run { self.driveEnded() } }
             }
@@ -138,7 +146,8 @@ class AutoDriveManager: NSObject, ObservableObject {
         maxSpeedMph = 0
         userConfirmedSession = false
         isDrivingConfirmed = false
-        locationManager.requestWhenInUseAuthorization()
+        // Bug 1 fix: request always authorization so detection works when app is in background
+        locationManager.requestAlwaysAuthorization()
         locationManager.startUpdatingLocation()
         showStartBanner = true
         announceDetection()
@@ -152,17 +161,34 @@ class AutoDriveManager: NSObject, ObservableObject {
         showStartBanner = false
         stopVoiceListening()
 
-        guard userConfirmedSession else { return }
-
         let durationMinutes = max(Int(Date().timeIntervalSince(startTime) / 60), 1)
+        let wasConfirmed = userConfirmedSession
+        userConfirmedSession = false
+        driveStartTime = nil
+
+        // Bug 3 fix: discard only very short detections (< 2 min = likely noise / traffic stops).
+        // For anything ≥ 2 min, always surface the end-prompt — even if user never said yes —
+        // so no drive data is silently lost.
+        guard durationMinutes >= 2 else { return }
+
         var conditions: [DrivingCondition] = []
         let hour = Calendar.current.component(.hour, from: startTime)
         conditions.append(hour >= 18 || hour < 6 ? .night : .day)
         if maxSpeedMph > 45 { conditions.append(.highway) }
 
-        pendingSession = DetectedSession(date: startTime, durationMinutes: durationMinutes, conditions: conditions)
+        pendingSession = DetectedSession(
+            date: startTime,
+            durationMinutes: durationMinutes,
+            conditions: conditions,
+            wasUserConfirmed: wasConfirmed
+        )
         showEndPrompt = true
-        speak("Drive ended. \(durationMinutes) minute\(durationMinutes == 1 ? "" : "s") detected. Please review and save your session.")
+
+        if wasConfirmed {
+            speak("Drive ended. \(durationMinutes) minute\(durationMinutes == 1 ? "" : "s") detected. Please review and save your session.")
+        } else {
+            speak("A drive was detected. Would you like to log this session?")
+        }
     }
 
     // MARK: - TTS
@@ -193,7 +219,9 @@ class AutoDriveManager: NSObject, ObservableObject {
 
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.record, mode: .measurement, options: .duckOthers)
+            // Bug 2 fix: use playAndRecord so the mic is already warm after TTS finishes
+            try session.setCategory(.playAndRecord, mode: .default,
+                                    options: [.duckOthers, .defaultToSpeaker, .allowBluetoothHFP])
             try session.setActive(true, options: .notifyOthersOnDeactivation)
 
             let engine = AVAudioEngine()
@@ -210,8 +238,8 @@ class AutoDriveManager: NSObject, ObservableObject {
             voiceTask = voiceRecognizer?.recognitionTask(with: request) { [weak self] result, error in
                 guard let self else { return }
                 if let text = result?.bestTranscription.formattedString.lowercased() {
-                    let yes = ["yes", "yeah", "yep", "sure", "ok", "okay", "log it", "log", "do it"]
-                    let no  = ["no", "nope", "cancel", "dismiss", "don't", "stop", "not now"]
+                    let yes = ["yes", "yeah", "yep", "sure", "ok", "okay", "log it", "log", "do it", "correct", "affirmative"]
+                    let no  = ["no", "nope", "cancel", "dismiss", "don't", "stop", "not now", "skip", "ignore"]
                     if yes.contains(where: { text.contains($0) }) {
                         Task { @MainActor in self.userConfirmedDriveStart() }
                     } else if no.contains(where: { text.contains($0) }) {
@@ -227,7 +255,7 @@ class AutoDriveManager: NSObject, ObservableObject {
             return
         }
 
-        // Auto-timeout after 10 seconds
+        // Auto-timeout after 10 seconds of silence
         voiceTimeoutTask?.cancel()
         voiceTimeoutTask = Task {
             try? await Task.sleep(for: .seconds(10))
@@ -275,12 +303,17 @@ extension AutoDriveManager: CLLocationManagerDelegate {
 // MARK: - AVSpeechSynthesizerDelegate
 
 extension AutoDriveManager: AVSpeechSynthesizerDelegate {
-    /// After the "Driving detected" announcement finishes, start listening for yes/no.
-    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+    /// After the "Driving detected" announcement finishes, wait briefly for the audio
+    /// session to settle, then start listening for a yes/no voice response.
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer,
+                                        didFinish utterance: AVSpeechUtterance) {
         Task { @MainActor in
-            if self.isDriving && self.showStartBanner && !self.isListeningForVoiceResponse {
-                self.startVoiceResponseListening()
-            }
+            guard self.isDriving && self.showStartBanner && !self.isListeningForVoiceResponse else { return }
+            // Bug 2 fix: give AVAudioSession 500 ms to fully exit playback mode
+            // before we switch to playAndRecord for speech recognition.
+            try? await Task.sleep(for: .milliseconds(500))
+            guard self.isDriving && self.showStartBanner && !self.isListeningForVoiceResponse else { return }
+            self.startVoiceResponseListening()
         }
     }
 }
