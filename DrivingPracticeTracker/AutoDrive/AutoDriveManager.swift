@@ -53,9 +53,6 @@ class AutoDriveManager: NSObject, ObservableObject {
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         locationManager.distanceFilter = 20
-        // Bug 1 fix: allow location (and thus CMMotion piggyback) to run in background
-        locationManager.allowsBackgroundLocationUpdates = true
-        locationManager.pausesLocationUpdatesAutomatically = false
         synthesizer.delegate = self
         voiceRecognizer = SFSpeechRecognizer(locale: Locale.current)
             ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
@@ -69,14 +66,11 @@ class AutoDriveManager: NSObject, ObservableObject {
             guard let self, let activity else { return }
             Task { @MainActor in self.process(activity: activity) }
         }
-        // Bug 1 fix: significant location changes relaunch the app from terminated state
-        locationManager.startMonitoringSignificantLocationChanges()
     }
 
     func stopMonitoring() {
         activityManager.stopActivityUpdates()
         locationManager.stopUpdatingLocation()
-        locationManager.stopMonitoringSignificantLocationChanges()
         stopDebounceTask?.cancel()
         stopVoiceListening()
     }
@@ -146,8 +140,7 @@ class AutoDriveManager: NSObject, ObservableObject {
         maxSpeedMph = 0
         userConfirmedSession = false
         isDrivingConfirmed = false
-        // Bug 1 fix: request always authorization so detection works when app is in background
-        locationManager.requestAlwaysAuthorization()
+        locationManager.requestWhenInUseAuthorization()
         locationManager.startUpdatingLocation()
         showStartBanner = true
         announceDetection()
